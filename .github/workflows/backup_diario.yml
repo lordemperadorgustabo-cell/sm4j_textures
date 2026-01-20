@@ -13,7 +13,7 @@ jobs:
       - name: Checkout código
         uses: actions/checkout@v3
 
-      - name: Instalar Postgres Cliente 17 (Versión Nueva)
+      - name: Instalar Postgres Cliente 17
         run: |
           sudo apt-get install -y postgresql-common
           yes | sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
@@ -24,16 +24,19 @@ jobs:
           sudo -v ; curl https://rclone.org/install.sh | sudo bash
 
       - name: Configurar Rclone
+        # CAMBIO CLAVE: Usamos 'env' para proteger las comillas del secreto
+        env:
+          RCLONE_CONFIG_CONTENT: ${{ secrets.RCLONE_CONFIG }}
         run: |
           mkdir -p ~/.config/rclone
-          echo "${{ secrets.RCLONE_CONFIG }}" > ~/.config/rclone/rclone.conf
+          echo "$RCLONE_CONFIG_CONTENT" > ~/.config/rclone/rclone.conf
 
       - name: 1. Hacer Backup de la Base de Datos
         run: |
           FECHA=$(date +%Y-%m-%d)
-          mkdir -p backups          
+          mkdir -p backups
           
-          # Usamos la ruta completa para asegurar que usa la versión 17
+          # Usamos la ruta de Postgres 17
           /usr/lib/postgresql/17/bin/pg_dump "${{ secrets.SUPABASE_DB_URL }}" -f "backups/sm4j_db_$FECHA.sql"
           
           echo "✅ Base de datos descargada correctamente."
