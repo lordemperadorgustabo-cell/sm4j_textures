@@ -1,4 +1,4 @@
-name: Backup Diario a Google Drive
+name: Backup Diario (DB + Releases) a Drive
 
 on:
   schedule:
@@ -8,7 +8,8 @@ on:
 jobs:
   backup:
     runs-on: ubuntu-latest
-    
+    permissions: contents: read # Necesario para leer los releases
+
     steps:
       - name: Checkout código
         uses: actions/checkout@v3
@@ -24,7 +25,6 @@ jobs:
           sudo -v ; curl https://rclone.org/install.sh | sudo bash
 
       - name: Configurar Rclone
-        # CAMBIO CLAVE: Usamos 'env' para proteger las comillas del secreto
         env:
           RCLONE_CONFIG_CONTENT: ${{ secrets.RCLONE_CONFIG }}
         run: |
@@ -34,14 +34,35 @@ jobs:
       - name: 1. Hacer Backup de la Base de Datos
         run: |
           FECHA=$(date +%Y-%m-%d)
-          mkdir -p backups
+          mkdir -p backups/Database
           
-          # Usamos la ruta de Postgres 17
-          /usr/lib/postgresql/17/bin/pg_dump "${{ secrets.SUPABASE_DB_URL }}" -f "backups/sm4j_db_$FECHA.sql"
-          
-          echo "✅ Base de datos descargada correctamente."
+          # Guarda la DB en una subcarpeta
+          /usr/lib/postgresql/17/bin/pg_dump "${{ secrets.SUPABASE_DB_URL }}" -f "backups/Database/sm4j_db_$FECHA.sql"
+          echo "✅ Base de datos lista."
 
-      - name: 2. Subir a Google Drive
+      - name: 2. Descargar TODOS los Releases (Lo que pediste)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Token automático de GitHub
         run: |
-          rclone copy backups/ midrive:SM4J_Backups
-          echo "✅ Backup subido a Google Drive."
+          mkdir -p backups/Releases
+          
+          echo "🔍 Buscando releases..."
+          
+          # Este bucle mágico busca todas tus versiones (hasta 100)
+          gh release list --limit 100 --json tagName --jq '.[].tagName' | while read tag; do
+            echo "⬇️ Descargando assets de la versión: $tag"
+            
+            # Crea una carpeta por versión (ej: backups/Releases/v1.0)
+            mkdir -p "backups/Releases/$tag"
+            
+            # Descarga todo lo que haya en ese release (*), si falla sigue al siguiente
+            gh release download "$tag" --dir "backups/Releases/$tag" --pattern "*" || echo "⚠️ Alerta: $tag no tenía archivos o falló."
+          done
+
+      - name: 3. Sincronizar con Google Drive
+        run: |
+          # Usamos 'copy' para que solo suba lo nuevo.
+          # Estructura en Drive: SM4J_Backups -> [Database, Releases]
+          rclone copy backups/ midrive:SM4J_Backups --transfers=4
+          
+          echo "✅ Todo subido a Google Drive (Solo lo nuevo)."
