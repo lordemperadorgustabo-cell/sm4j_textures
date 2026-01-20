@@ -1,4 +1,4 @@
-name: Backup Diario a Google Drive
+name: "Backup Diario (DB + Releases)"
 
 on:
   schedule:
@@ -9,12 +9,17 @@ jobs:
   backup:
     runs-on: ubuntu-latest
     
+    # Corrección: Permisos en formato extendido para evitar errores de sintaxis
+    permissions:
+      contents: read
+
     steps:
       - name: Checkout código
         uses: actions/checkout@v3
 
       - name: Instalar Postgres Cliente 17
         run: |
+          sudo apt-get update
           sudo apt-get install -y postgresql-common
           yes | sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
           sudo apt-get install -y postgresql-client-17
@@ -24,7 +29,6 @@ jobs:
           sudo -v ; curl https://rclone.org/install.sh | sudo bash
 
       - name: Configurar Rclone
-        # CAMBIO CLAVE: Usamos 'env' para proteger las comillas del secreto
         env:
           RCLONE_CONFIG_CONTENT: ${{ secrets.RCLONE_CONFIG }}
         run: |
@@ -34,14 +38,30 @@ jobs:
       - name: 1. Hacer Backup de la Base de Datos
         run: |
           FECHA=$(date +%Y-%m-%d)
-          mkdir -p backups
+          mkdir -p backups/Database
           
-          # Usamos la ruta de Postgres 17
-          /usr/lib/postgresql/17/bin/pg_dump "${{ secrets.SUPABASE_DB_URL }}" -f "backups/sm4j_db_$FECHA.sql"
-          
-          echo "✅ Base de datos descargada correctamente."
+          # Descargar DB
+          /usr/lib/postgresql/17/bin/pg_dump "${{ secrets.SUPABASE_DB_URL }}" -f "backups/Database/sm4j_db_$FECHA.sql"
+          echo "✅ Base de datos descargada."
 
-      - name: 2. Subir a Google Drive
+      - name: 2. Descargar Releases (Versiones publicadas)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          rclone copy backups/ midrive:SM4J_Backups
-          echo "✅ Backup subido a Google Drive."
+          mkdir -p backups/Releases
+          echo "🔍 Buscando versiones..."
+          
+          # Busca todas las versiones y descarga sus archivos
+          gh release list --limit 100 --json tagName --jq '.[].tagName' | while read tag; do
+            echo "⬇️ Bajando versión: $tag"
+            mkdir -p "backups/Releases/$tag"
+            
+            # El "|| true" es para que si una versión no tiene archivos, no se rompa todo el backup
+            gh release download "$tag" --dir "backups/Releases/$tag" --pattern "*" || true
+          done
+
+      - name: 3. Subir TODO a Google Drive
+        run: |
+          # Sube la carpeta 'backups' completa (que ahora tiene Database y Releases)
+          rclone copy backups/ midrive:SM4J_Backups --transfers=4
+          echo "✅ Todo subido a Google Drive."
