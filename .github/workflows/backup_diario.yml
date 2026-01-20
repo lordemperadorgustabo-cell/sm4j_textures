@@ -1,0 +1,49 @@
+name: Backup Diario a Google Drive
+
+on:
+  schedule:
+    # Se ejecuta todos los días a las 00:00 UTC
+    - cron: '0 0 * * *'
+  # Esto te permite ejecutarlo manualmente con un botón (para probar hoy mismo)
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v3
+
+      - name: Instalar herramientas Postgres
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Instalar Rclone
+        run: |
+          sudo -v ; curl https://rclone.org/install.sh | sudo bash
+
+      - name: Configurar Rclone
+        # Aquí crea el archivo de configuración usando el SECRETO que guardaste antes
+        run: |
+          mkdir -p ~/.config/rclone
+          echo "${{ secrets.RCLONE_CONFIG }}" > ~/.config/rclone/rclone.conf
+
+      - name: 1. Hacer Backup de la Base de Datos
+        run: |
+          # Crea carpeta local
+          FECHA=$(date +%Y-%m-%d)
+          mkdir -p backups          
+          
+          # Descarga la DB. OJO: Usa el secreto SUPABASE_DB_URL
+          pg_dump "${{ secrets.SUPABASE_DB_URL }}" -f "backups/sm4j_db_$FECHA.sql"
+          
+          echo "✅ Base de datos descargada: sm4j_db_$FECHA.sql"
+
+      - name: 2. Subir a Google Drive
+        run: |
+          # Sube lo que está en la carpeta 'backups' a la carpeta 'SM4J_Backups' en tu Drive
+          rclone copy backups/ midrive:SM4J_Backups
+          
+          echo "✅ Backup subido a Google Drive."
