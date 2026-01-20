@@ -1,4 +1,4 @@
-name: Backup Diario (DB + Releases) a Drive
+name: Backup Diario a Google Drive
 
 on:
   schedule:
